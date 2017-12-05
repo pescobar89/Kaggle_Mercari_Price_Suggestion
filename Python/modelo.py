@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import dplython as dp
 import gc
+import pickle
 
 # Fijamos el directorio de trabajo
 os.chdir('D:/pescobar/otros/Kaggle/Kaggle_Mercari_Price_Suggestion/')
@@ -15,8 +16,8 @@ os.chdir('D:/pescobar/otros/Kaggle/Kaggle_Mercari_Price_Suggestion/')
 # 1. LECTURA Y FORMATEO INICIAL
 #------------------------------------------------------------------------------
 # Leemos las bases de datos
-train = pd.read_csv('data/train.tsv', sep='\t')
-test = pd.read_csv('data/test.tsv', sep='\t')
+train = dp.DplyFrame(pd.read_csv('data/train.tsv', sep='\t'))
+test = dp.DplyFrame(pd.read_csv('data/test.tsv', sep='\t'))
 
 # Consolidamos la data en un solo data frame
 # Cambiamos el nombre de las variables id
@@ -38,14 +39,37 @@ del test, train
 gc.collect()
 # Reorganizamos el orden de las variables
 orden = ['subset', 'id', 'price', 'item_condition_id', 'shipping',
-         'brand_name', 'category_name', 'name', 'item_description']
+         'category_name', 'brand_name', 'name', 'item_description']
 df = df[orden]
 del orden
 
 #------------------------------------------------------------------------------
-# 2. TRANSFORMACIONES INICIALES DE VARIABLES
+# 2. EXPLORATORIO Y TRANSFORMACIONES INICIALES
 #------------------------------------------------------------------------------
+
+# 1. category_name
 # A partir de la variable category_name generamos variables por cada nivel de 
 # categoria
 categorias = df.category_name.str.split('/', expand=True)
 categorias.fillna(value=np.nan, inplace=True)
+categorias.columns = ['cat_level_1', 'cat_level_2', 'cat_level_3',
+                      'cat_level_4', 'cat_level_5']
+# Unimos la info al data frame
+df = pd.concat([df.iloc[:,0:5], categorias, df.iloc[:,6:]], axis=1)
+
+# 2. brand_name
+# Obtenemos las frecuencias absolutas y relativas
+freq_abs = df[df.subset=='train'].brand_name.value_counts()
+freq_rel = round(df[df.subset=='train'].brand_name.value_counts()/df[df.subset=='train'].shape[0]*100,4)
+# Extraemos los valores unicos
+brand_name = df.brand_name.unique().tolist()
+# Vamos a usar Google Trends para sacar valores de popularidad para las marcas
+# Guardamos el objeto brand_name
+with open('brand_name.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
+    pickle.dump(brand_name, f)
+# Trabajamos la logica en GT_brand_name.py
+
+
+
+
+
