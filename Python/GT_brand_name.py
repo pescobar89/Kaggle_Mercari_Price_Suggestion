@@ -1,6 +1,9 @@
 #------------------------------------------------------------------------------
 # 0. SETUP 
 #------------------------------------------------------------------------------
+# Reiniciamos el nucleo
+%reset -f
+
 # Librerias
 import os
 import pandas as pd
@@ -17,3 +20,7 @@ with open('brand_name.pkl', 'rb') as f:  # Python 3: open(..., 'rb')
 # Eliminamos el valor nan
 brand_name = brand_name[1:]
 ref = brand_name[0]
+
+pytrend = TrendReq()
+kw_list = [ref, brand_name[1]]
+pytrends.build_payload(kw_list, cat=0, timeframe='today 5-y', geo='', gprop='')
