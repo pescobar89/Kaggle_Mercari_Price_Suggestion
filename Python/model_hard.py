@@ -12,6 +12,7 @@ import gc
 import pickle
 import functools
 import gc
+import itertools
 
 # Fijamos el directorio de trabajo
 os.chdir('C:/_Proyectos/Challenges/Kaggle/Kaggle_Mercari_Price_Suggestion/')
@@ -45,8 +46,8 @@ df = df.reset_index(drop=True)
 # Borramos los df originales
 del test, train; gc.collect()
 # Reorganizamos el orden de las variables
-orden = ['subset', 'id', 'price', 'item_condition_id', 'shipping',
-         'category_name', 'brand_name', 'name', 'item_description']
+orden = ['subset', 'id', 'name','item_description', 'brand_name',
+         'category_name', 'item_condition_id', 'shipping', 'price']
 df = df[orden]
 del orden; gc.collect()
 
@@ -54,57 +55,56 @@ del orden; gc.collect()
 # 2. EXPLORATORIO Y TRANSFORMACIONES INICIALES
 #------------------------------------------------------------------------------
 
-# 1. category_name
+# 2.1. Vamos a asignar a cada registro la media y la desviacion tipica del
+# precio para las combinaciones de las variables brand_name, category_name,
+# item_condition_id y shipping
+# Primero transformamos en string las variables item_condition_id y shipping
+df['item_condition_id'] = df['item_condition_id'].astype(str)
+df['shipping'] = df['shipping'].astype(str)
+# En la variable brand_name transformamos los nan float en nan string
+df['brand_name'] = np.where(df['brand_name'].isnull(), 'nan', df['brand_name'])
 # A partir de la variable category_name generamos variables por cada nivel de 
 # categoria
 categorias = df.category_name.str.split('/', expand=True)
 categorias.fillna(value='nan', inplace=True)
-categorias.columns = ['cat_lev_1', 'cat_lev_2', 'cat_lev_3',
-                      'cat_lev_4', 'cat_lev_5']
+categorias.columns = ['cat_lev_1', 'cat_lev_2', 'cat_lev_3',  'cat_lev_4',
+                      'cat_lev_5']
 # Unimos la info al data frame
 df = pd.concat([df.iloc[:,0:5], categorias, df.iloc[:,6:]], axis=1)
+# En cada una de las variables a trabajar en este punto si el valor no esta en 
+# el train le asignamos nan en el test como string
+for column in df.iloc[:,4:10]:
+    # Duplicamos la variable
+    df[column+'_ori'] = df[column]
+    # Nos quedamos con los valores unicos del train
+    unicos = df[df.subset=='train'][column].unique()
+    # Reemplazamos los nan float por nan string (haciendolo para todo el data
+    # frame, train y test, se corregiran los valores del test)
+    df[column] = np.where(df[column].isin(unicos), df[column], 'nan')
+# Reorganizamos las variables
+orden = [list(range(0,4))+list(range(13,19))+list(range(4,13))]
+df = df[df.columns.values[orden]]
 # Borramos objetos sobrantes
-del categorias; gc.collect()
-# Obtenemos frecuencias absolutas y relativas
-# Para cada variable
-n_df_train = df[df.subset=='train'].shape[0]
-c1_abs = df[df.subset=='train'].cat_lev_1.value_counts(dropna=False)
-c1_rel = round(c1_abs/n_df_train*100,4)
-c1_ar = pd.concat([c1_abs, c1_rel], axis=1)
-c2_abs = df[df.subset=='train'].cat_lev_2.value_counts(dropna=False)
-c2_rel = round(c2_abs/n_df_train*100,4)
-c2_ar = pd.concat([c2_abs, c2_rel], axis=1)
-c3_abs = df[df.subset=='train'].cat_lev_3.value_counts(dropna=False)
-c3_rel = round(c3_abs/n_df_train*100,4)
-c3_ar = pd.concat([c3_abs, c3_rel], axis=1)
-# Borramos objetos sobrantes
-del c1_abs, c1_rel, c2_abs, c2_rel, c3_abs, c3_rel, n_df_train; gc.collect()
-# Para el primer par de variables
-c12_abs = pd.crosstab(index=df[df.subset=='train'].cat_lev_2,
-                      columns=df[df.subset=='train'].cat_lev_1, dropna=False)
-c12_abs = c12_abs.reset_index(level=c12_abs.index.names)
-c12_ar = pd.melt(c12_abs, id_vars=c12_abs.columns.values[0],
-                 value_vars=c12_abs.columns.tolist()[1:])
-c12_rel_c1 = round(pd.crosstab(index=df[df.subset=='train'].cat_lev_2,
-                               columns=df[df.subset=='train'].cat_lev_1, 
-                               dropna=False, normalize='columns')*100,4)
-c12_rel_c1 = c12_rel_c1.reset_index(level=c12_rel_c1.index.names)
-aux = pd.melt(c12_rel_c1, id_vars=c12_rel_c1.columns.values[0],
-                 value_vars=c12_rel_c1.columns.tolist()[1:])
-c12_ar = pd.concat([c12_ar, aux.value], axis=1)
-c12_rel = round(pd.crosstab(index=df[df.subset=='train'].cat_lev_2,
-                            columns=df[df.subset=='train'].cat_lev_1,
-                            dropna=False, normalize='all')*100,4)
-c12_rel = c12_rel.reset_index(level=c12_rel.index.names)
-aux = pd.melt(c12_rel, id_vars=c12_rel.columns.values[0],
-              value_vars=c12_rel.columns.tolist()[1:])
-c12_ar = pd.concat([c12_ar, aux.value], axis=1)
-c12_ar.columns = c12_ar.columns.tolist()[0:2] + ['c12_abs', 'c12_rel_c1', 'c12_rel']
-c12_ar = c12_ar.iloc[:,[1,0]+list(range(2,5))]
-c12_ar = c12_ar[c12_ar.c12_abs>0]
-# Borramos objetos sobrantes
-del c12_abs, c12_rel, c12_rel_c1, aux; gc.collect()
+del categorias, column, orden, unicos; gc.collect()
+
+
+
+# Obtenemos las combinaciones posibles
+variables = df.columns.values.tolist()[10:18]
+combinaciones = []
+for i in range(0,8):
+    for tup  in itertools.combinations(variables, i+1):
+        combinaciones.append(list(tup))
 # Calculamos el precio medio por cada una de las combinaciones de las variables
+
+
+
+
+
+
+
+
+
 # categoria nivel i y marca
 # c1
 media_c1 = df[df.subset=='train'].groupby(['cat_lev_1'], as_index=False)['price'].mean()
