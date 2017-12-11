@@ -20,6 +20,7 @@ import gc
 import itertools
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
+import re
 
 # Fijamos el directorio de trabajo
 os.chdir('C:/_Proyectos/Challenges/Kaggle/Kaggle_Mercari_Price_Suggestion/')
@@ -43,9 +44,9 @@ validation.columns = ['id'] + validation.columns.tolist()[1:len(validation.colum
 test.columns = ['id'] + test.columns.tolist()[1:len(test.columns.tolist())]
 # Modificamos los id poniendole el data set al que pertenecen (si no estarian
 # duplicados)
-#train['id'] = train['id'].map(str) + '-train'
-#validation['id'] = validation['id'].map(str) + '-validation'
-#test['id'] = test['id'].map(str) + '-test'
+train['id'] = train['id'].map(str) + '-train'
+validation['id'] = validation['id'].map(str) + '-validation'
+test['id'] = test['id'].map(str) + '-test'
 # Añadimos variables que identifiquen cada subset
 train['subset'] = 'train'
 validation['subset'] = 'validation'
@@ -114,6 +115,7 @@ for i in range(0,8):
 del i, tup, variables; gc.collect()
 # Calculamos la media y la desviacion tipica del precio por cada una de las 
 # combinaciones de las variables
+# Revisar la combinacion 9
 for i, comb in enumerate(combinaciones):
     print('Combinacion ' + str(i) + " - " + '/'.join(comb))
     media = df[df.subset=='train'].groupby(comb, as_index=False)['price'].mean()
@@ -121,20 +123,20 @@ for i, comb in enumerate(combinaciones):
     ds = df[df.subset=='train'].groupby(comb, as_index=True)['price'].std()
     ds = ds.reset_index(level=ds.index.names)
     ds.columns = comb + ['ds-' + '-'.join(comb)]
-    dfs = [df, media, ds]
-    df = functools.reduce(lambda left,right: pd.merge(left,right,on=comb), dfs)
+    stats = pd.merge(media, ds, on=comb)
+    df = pd.merge(df, stats, on=comb, how='outer')
     print('Tamaño del data frame: ' + str(df.shape[0]))
 # Borramos objetos sobrantes
-del comb, combinaciones, dfs, ds, i, media; gc.collect()
+del ds, i, media, stats; gc.collect()
 
 # Guardamos df en un csv
-#df.to_csv('pkl/df_medias_dss.csv', index=False)
+df.to_csv('pkl/df_medias_dss.csv', index=False)
 
 # Formateamos la data para el entrenamiento del xgboost
-dtrain = xgb.DMatrix(df[df.subset=='train'].iloc[:,19:90], label=df[df.subset=='train']['price'])
-dvalidation = xgb.DMatrix(df[df.subset=='validation'].iloc[:,19:90], label=df[df.subset=='validation']['price'])
-dtest = xgb.DMatrix(df[df.subset=='test'].iloc[:,19:90], label=df[df.subset=='test']['price'])
-evallist = [(dtrain, 'train'), (dvalidation, 'validation')]
+dtrain = xgb.DMatrix(df[df.subset=='train'].iloc[:,19:203], label=df[df.subset=='train']['price'])
+dvalidation = xgb.DMatrix(df[df.subset=='validation'].iloc[:,19:203], label=df[df.subset=='validation']['price'])
+dtest = xgb.DMatrix(df[df.subset=='test'].iloc[:,19:203], label=df[df.subset=='test']['price'])
+
 
 
 #------------------------------------------------------------------------------
@@ -147,7 +149,7 @@ param = {
         'silent': 0,
         'nthread': 7,
         # Parameters for Tree Booster
-        'eta': 0.3,
+        'eta': 0.05,
         'gamma': 0,
         'max_depth': 6,
         'min_child_weight': 1,
@@ -159,8 +161,8 @@ param = {
         'eval_metric': 'rmse',
         'seed': 0
         }
-num_round = 37
-bst = xgb.train(param, dtrain, num_round, evallist)
+num_round = 58
+bst = xgb.train(param, dtrain, num_round, [(dtrain, 'train'), (dvalidation, 'validation')])
 
 
 #------------------------------------------------------------------------------
@@ -177,8 +179,9 @@ pred = bst.predict(dtest)
 ids = df[df.subset=='test']['id'].reset_index(drop=True)
 pred = pd.concat([ids, pd.Series(pred)], axis=1)
 pred.columns = ['test_id', 'price']
+pred['test_id'] = pred['test_id'].str.replace('-test','')
 # Guardamos el los resultados en un csv
-pred.to_csv('results/results_model_hard_1_dos.csv', index=False)
+pred.to_csv('results/results_model_hard_3_dos.csv', index=False)
 
 
 
