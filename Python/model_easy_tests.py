@@ -2,6 +2,7 @@
 ###################### KAGGLE - MERCARY PRICE SUGGESTION ######################
 ###############################################################################
 
+# Diferentes pruebas con las variables iniciales 
 
 #------------------------------------------------------------------------------
 # 0. SETUP 
@@ -21,6 +22,7 @@ import itertools
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
 import re
+import random
 import math
 
 #A function to calculate Root Mean Squared Logarithmic Error (RMSLE)
@@ -40,6 +42,7 @@ os.chdir('C:/_Proyectos/Challenges/Kaggle/Kaggle_Mercari_Price_Suggestion/')
 train = pd.read_csv('data/train.tsv', sep='\t')
 test = pd.read_csv('data/test.tsv', sep='\t')
 # Partimos la data train en train validation
+random.seed(0)
 idx = np.random.rand(len(train)) < 0.7
 validation = train[~idx]
 train = train[idx]
@@ -77,13 +80,9 @@ del orden; gc.collect()
 
 
 #------------------------------------------------------------------------------
-# 2. EXPLORATORIO Y TRANSFORMACIONES INICIALES
+# 2. EXPLORATORIO Y TRANSFORMACIONES DE VARIABLES
 #------------------------------------------------------------------------------
-
-# 2.1. Vamos a asignar a cada registro la media y la desviacion tipica del
-# precio para las combinaciones de las variables brand_name, category_name,
-# item_condition_id y shipping
-# Primero transformamos en string las variables item_condition_id y shipping
+# Transformamos en string las variables item_condition_id y shipping
 df['item_condition_id'] = df['item_condition_id'].astype(str)
 df['shipping'] = df['shipping'].astype(str)
 # En la variable brand_name transformamos los nan float en nan string
@@ -99,53 +98,51 @@ df = pd.concat([df.iloc[:,0:5], categorias, df.iloc[:,6:]], axis=1)
 # En cada una de las variables a trabajar en este punto si el valor no esta en 
 # el train le asignamos nan en el test como string
 for column in df.iloc[:,4:10]:
-    # Duplicamos la variable
-    df[column+'_ori'] = df[column]
     # Nos quedamos con los valores unicos del train
     unicos = df[df.subset=='train'][column].unique()
     # Reemplazamos los nan float por nan string (haciendolo para todo el data
     # frame, train y test, se corregiran los valores del test)
     df[column] = np.where(df[column].isin(unicos), df[column], 'nan')
-# Reorganizamos las variables
-orden = [list(range(0,4))+list(range(13,19))+list(range(4,13))]
-df = df[df.columns.values[orden]]
 # Borramos objetos sobrantes
-del categorias, column, orden, unicos; gc.collect()
+del categorias, column, unicos; gc.collect()
 
-# Obtenemos las combinaciones posibles
-variables = df.columns.values.tolist()[10:18]
-combinaciones = []
-for i in range(0,8):
-    for tup  in itertools.combinations(variables, i+1):
-        combinaciones.append(list(tup))
+# Obtenemos frecuencias absolutas y relativas
+# Para cada variable
+freqs = []
+variables = df.columns.tolist()[4:12]
+for i, var in enumerate(variables):
+    fabs = df[df.subset=='train'][var].value_counts(dropna=False)
+    frel = round(fabs/(df[df.subset=='train'].shape[0])*100,4)
+    freq = pd.concat([fabs, frel], axis=1)
+    freq.columns = ['absoluta', 'relativa']
+    freq = [var, freq]
+    freqs.append(freq)
 # Borramos objetos sobrantes
-del i, tup, variables; gc.collect()
-# Calculamos la media y la desviacion tipica del precio por cada una de las 
-# combinaciones de las variables
-# Revisar la combinacion 9
-for i, comb in enumerate(combinaciones):
-    print('Combinacion ' + str(i) + " - " + '/'.join(comb))
-    media = df[df.subset=='train'].groupby(comb, as_index=False)['price'].mean()
-    media.columns = comb + ['media-' + '-'.join(comb)]
-    ds = df[df.subset=='train'].groupby(comb, as_index=True)['price'].std()
-    ds = ds.reset_index(level=ds.index.names)
-    ds.columns = comb + ['ds-' + '-'.join(comb)]
-    stats = pd.merge(media, ds, on=comb)
-    df = pd.merge(df, stats, on=comb, how='outer')
-    print('Tamaño del data frame: ' + str(df.shape[0]))
-# Borramos objetos sobrantes
-del ds, i, media, stats; gc.collect()
+del i, var, fabs, frel, freq; gc.collect()
 
-# Guardamos df en un csv
-#df.to_csv('pkl/df_medias_dss.csv', index=False)
-df = pd.read_csv('pkl/df_medias_dss.csv', encoding='latin-1')
+# Reestructuramos las variables categoricas con mas de 10 + 1 (nan) niveles
+num_vars = 10
+for i, var in enumerate(variables):
+    freq = freqs[i][1]
+    niveles = freq.index.tolist()
+    niveles = [x for x in niveles if x not in 'nan']
+    if len(niveles)>num_vars:
+        niveles = niveles[0:num_vars]
+        df[var] = np.where(df[var].isin(niveles + ['nan']), df[var], 'OTHERS')
+# Borramos objetos sobrantes
+del i, freq, niveles, var, variables; gc.collect() 
+
+# Generamos dummies para las variables cat_lev_1, item_condition_id y shipping
+dummies = pd.get_dummies(df.iloc[:,4:12])
+df = pd.concat([df, dummies], axis=1)
+# Borramos objetos sobrantes
+del dummies; gc.collect()
 
 # Formateamos la data para el entrenamiento del xgboost
-dtrain = xgb.DMatrix(df[df.subset=='train'].iloc[:,19:203], label=df[df.subset=='train']['price'])
-dvalidation = xgb.DMatrix(df[df.subset=='validation'].iloc[:,19:203], label=df[df.subset=='validation']['price'])
-dtest = xgb.DMatrix(df[df.subset=='test'].iloc[:,19:203], label=df[df.subset=='test']['price'])
-
-
+dtrain = xgb.DMatrix(df[df.subset=='train'].iloc[:,13:78], label=df[df.subset=='train']['price'])
+dvalidation = xgb.DMatrix(df[df.subset=='validation'].iloc[:,13:78], label=df[df.subset=='validation']['price'])
+dtest = xgb.DMatrix(df[df.subset=='test'].iloc[:,13:78], label=df[df.subset=='test']['price'])
+evallist = [(dtrain, 'train'), (dvalidation, 'validation')]
 
 #------------------------------------------------------------------------------
 # 3. MODELO XGBOOST
@@ -157,7 +154,7 @@ param = {
         'silent': 0,
         'nthread': 7,
         # Parameters for Tree Booster
-        'eta': 0.05,
+        'eta': 0.3,
         'gamma': 0,
         'max_depth': 6,
         'min_child_weight': 1,
@@ -169,8 +166,8 @@ param = {
         'eval_metric': 'rmse',
         'seed': 0
         }
-num_round = 58
-bst = xgb.train(param, dtrain, num_round, [(dtrain, 'train'), (dvalidation, 'validation')])
+num_round = 88
+bst = xgb.train(param, dtrain, num_round, evallist)
 
 
 #------------------------------------------------------------------------------
@@ -190,40 +187,7 @@ pred = bst.predict(dtest)
 ids = df[df.subset=='test']['id'].reset_index(drop=True)
 pred = pd.concat([ids, pd.Series(pred)], axis=1)
 pred.columns = ['test_id', 'price']
+pred['price'] = np.where(pred['price']<=0,.01,pred['price'])
 pred['test_id'] = pred['test_id'].str.replace('-test','')
 # Guardamos el los resultados en un csv
-pred.to_csv('results/results_model_hard_3_dos.csv', index=False)
-
-
-
-
-# 2. brand_name
-# Obtenemos las frecuencias absolutas y relativas
-#bn_abs = df[df.subset=='train'].brand_name.value_counts()
-#bn_rel = round(bn_abs/df[df.subset=='train'].shape[0]*100,4)
-# Extraemos los valores unicos
-#brand_name = df.brand_name.unique().tolist()
-
-# Obtenemos las frecuencias relativas para el par de variables cat_lev_1 y
-# brand_name
-#bc1 = round(pd.crosstab(index=df[df.subset=='train'].brand_name,
-#                  columns=df[df.subset=='train'].cat_lev_1,
-#                  dropna=False, normalize='index')*100,4)
-
-
-
-
-
-
-
-
-# Vamos a usar Google Trends para sacar valores de popularidad para las marcas
-# Guardamos el objeto brand_name
-#with open('brand_name.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
-#    pickle.dump(brand_name, f)
-# Trabajamos la logica en GT_brand_name.py
-
-
-
-
-
+pred.to_csv('results/results_model_easy_tests_2.csv', index=False)
