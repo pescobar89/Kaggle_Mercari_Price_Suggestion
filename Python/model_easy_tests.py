@@ -82,6 +82,10 @@ del orden; gc.collect()
 #------------------------------------------------------------------------------
 # 2. EXPLORATORIO Y TRANSFORMACIONES DE VARIABLES
 #------------------------------------------------------------------------------
+# Eliminamos los registros cuyo precio sea 0
+df = df[df.price>0]
+# Transformamos la variable dependiente usando el logaritmo
+df['price'] = np.log(df['price'])
 # Transformamos en string las variables item_condition_id y shipping
 df['item_condition_id'] = df['item_condition_id'].astype(str)
 df['shipping'] = df['shipping'].astype(str)
@@ -139,10 +143,11 @@ df = pd.concat([df, dummies], axis=1)
 del dummies; gc.collect()
 
 # Formateamos la data para el entrenamiento del xgboost
-dtrain = xgb.DMatrix(df[df.subset=='train'].iloc[:,13:78], label=df[df.subset=='train']['price'])
-dvalidation = xgb.DMatrix(df[df.subset=='validation'].iloc[:,13:78], label=df[df.subset=='validation']['price'])
-dtest = xgb.DMatrix(df[df.subset=='test'].iloc[:,13:78], label=df[df.subset=='test']['price'])
-evallist = [(dtrain, 'train'), (dvalidation, 'validation')]
+ncol = df.shape[1]+1
+dtrain = xgb.DMatrix(df[df.subset=='train'].iloc[:,13:ncol], label=df[df.subset=='train']['price'])
+dvalidation = xgb.DMatrix(df[df.subset=='validation'].iloc[:,13:ncol], label=df[df.subset=='validation']['price'])
+dtest = xgb.DMatrix(df[df.subset=='test'].iloc[:,13:ncol], label=df[df.subset=='test']['price'])
+
 
 #------------------------------------------------------------------------------
 # 3. MODELO XGBOOST
@@ -166,8 +171,8 @@ param = {
         'eval_metric': 'rmse',
         'seed': 0
         }
-num_round = 88
-bst = xgb.train(param, dtrain, num_round, evallist)
+num_round = 100
+bst = xgb.train(param, dtrain, num_round, [(dtrain, 'train'), (dvalidation, 'validation')])
 
 
 #------------------------------------------------------------------------------
