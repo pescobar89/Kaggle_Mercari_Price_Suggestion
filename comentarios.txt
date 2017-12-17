@@ -1,0 +1,8 @@
+1. 10 niveles en las variables categoricas - 0.6894273123400764                 X
+2. 20 niveles en las variables categoricas - 0.6794732663949098
+3. 50 niveles en las variables categoricas - 0.6413513537618263
+4. 100 niveles en las variables categoricas - 0.6281078114089725
+
+5. Eliminando los ceros 0.6854481798229034                                      X
+6. Añadiendo estadisticos descriptivos por niveles de cada una de las variables
+incluyendo los puntos 1 y 5 - 0.585322                                          X

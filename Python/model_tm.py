@@ -111,6 +111,29 @@ for column in df.iloc[:,4:10]:
 # Borramos objetos sobrantes
 del categorias, column, unicos; gc.collect()
 
+# Text Mining
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Obtenemos las combinaciones posibles
 variables = df.columns.values.tolist()[4:12]
 combinaciones = []
